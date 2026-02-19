@@ -1,0 +1,747 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>InternBot: Your Mentor</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;700&display=swap');
+
+        body {
+            font-family: 'Inter', sans-serif;
+            background-color: #1a1a2e;
+            color: #e5e7eb;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            padding: 2rem 0;
+            transition: all 0.5s ease-in-out;
+            overflow: hidden;
+        }
+
+        .app-container {
+            width: 100%;
+            max-width: 1200px;
+            height: 95vh;
+            display: flex;
+            background-color: #2a2a44;
+            border-radius: 1.5rem;
+            box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+            overflow: hidden;
+            opacity: 0;
+            transform: scale(0.95);
+        }
+        
+        @keyframes fadeInScale {
+            to {
+                opacity: 1;
+                transform: scale(1);
+            }
+        }
+
+        .sidebar {
+            width: 280px;
+            background-color: #16162a;
+            padding: 2rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+            border-right: 1px solid #3d3d5c;
+        }
+
+        .sidebar-button {
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.75rem;
+            padding: 1rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            transition: all 0.2s ease-in-out;
+            cursor: pointer;
+            text-align: center;
+            user-select: none;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            background-color: #3d3d5c;
+            color: #d1d5db;
+        }
+
+        .sidebar-button:hover:not(.active) {
+            background-color: #4b4b6c;
+            transform: translateY(-2px);
+        }
+
+        .sidebar-button.active {
+            background-color: #6366f1;
+            color: white;
+            box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+            transform: translateY(0);
+        }
+        
+        .sidebar-button:active {
+            transform: translateY(1px);
+        }
+
+        .main-content {
+            flex-grow: 1;
+            display: flex;
+            flex-direction: column;
+        }
+
+        .chat-header {
+            background-color: #2a2a44;
+            color: white;
+            text-align: center;
+            padding: 1.5rem 1.5rem;
+            box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+            position: relative;
+            z-index: 10;
+        }
+
+        .chat-messages {
+            flex-grow: 1;
+            padding: 1.5rem;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            word-wrap: break-word;
+            overflow-wrap: break-word;
+        }
+
+        .message-content {
+            font-size: 0.95rem;
+            line-height: 1.5;
+            color: #e5e7eb;
+            white-space: pre-wrap;
+            word-wrap: break-word;
+        }
+        .message-content h3 {
+            font-size: 1.25rem;
+            font-weight: 700;
+            margin-bottom: 0.5rem;
+            color: #a4a4d3;
+        }
+        .message-content strong {
+            font-weight: 700;
+            color: #fff;
+        }
+        .message-content p {
+            margin-bottom: 0.5rem;
+        }
+        /* Custom styles for bullet points (since no full markdown parser is used) */
+        .message-content li {
+            margin-left: 1.5rem;
+            list-style: disc;
+        }
+
+
+        .user-message {
+            background-color: #4338ca;
+            align-self: flex-end;
+            border-radius: 1.25rem 1.25rem 0.25rem 1.25rem;
+            padding: 0.75rem 1.25rem;
+            max-width: 80%;
+            animation: slideInRight 0.3s ease-in-out;
+        }
+
+        .bot-message {
+            background-color: #059669;
+            align-self: flex-start;
+            border-radius: 1.25rem 1.25rem 1.25rem 0.25rem;
+            padding: 0.75rem 1.25rem;
+            max-width: 80%;
+            animation: slideInLeft 0.3s ease-in-out;
+        }
+
+        @keyframes slideInRight {
+            from { transform: translateX(20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        @keyframes slideInLeft {
+            from { transform: translateX(-20px); opacity: 0; }
+            to { transform: translateX(0); opacity: 1; }
+        }
+
+        .typing-indicator {
+            align-self: flex-start;
+            color: #9ca3af;
+            padding: 0.5rem 1.25rem;
+            font-style: italic;
+            animation: fadeIn 0.5s ease-in-out;
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+
+        .input-area {
+            position: sticky;
+            bottom: 0;
+            padding: 1rem;
+            border-top: 1px solid #3d3d5c;
+            background-color: #2a2a44;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            z-index: 20;
+        }
+
+        .input-area input[type="text"] {
+            flex-grow: 1;
+            padding: 0.75rem 1.5rem;
+            border-radius: 9999px;
+            border: 1px solid #4b4b6c;
+            background-color: #16162a;
+            color: #e5e7eb;
+            outline: none;
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.2);
+            transition: all 0.3s;
+        }
+
+        .input-area input[type="text"]:focus {
+            border-color: #6366f1;
+            box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.3);
+        }
+        
+        .file-name-tag {
+            background-color: #4b4b6c;
+            color: #fff;
+            padding: 0.25rem 0.75rem;
+            border-radius: 9999px;
+            font-size: 0.8rem;
+            font-weight: 500;
+            display: none;
+            align-items: center;
+            gap: 0.5rem;
+            margin-left: 0.5rem;
+        }
+        .file-name-tag .remove-file-btn {
+            cursor: pointer;
+            color: #d1d5db;
+            transition: color 0.2s;
+        }
+        .file-name-tag .remove-file-btn:hover {
+            color: #e5e7eb;
+        }
+
+        .send-button, .action-button {
+            background-color: #10b981;
+            color: white;
+            width: 3rem;
+            height: 3rem;
+            border-radius: 9999px;
+            font-weight: 600;
+            transition: all 0.2s;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            cursor: pointer;
+            box-shadow: 0 4px 6px -1px rgba(16, 185, 129, 0.1), 0 2px 4px -1px rgba(16, 185, 129, 0.06);
+        }
+        
+        .action-button {
+            background-color: #6366f1;
+            box-shadow: 0 4px 6px -1px rgba(99, 102, 241, 0.1), 0 2px 4px -1px rgba(99, 102, 241, 0.06);
+        }
+
+        .send-button:hover {
+            background-color: #059669;
+            transform: translateY(-2px);
+        }
+        
+        .action-button:hover {
+            background-color: #4f46e5;
+            transform: translateY(-2px);
+        }
+        
+        .action-button.recording {
+            animation: pulse-border 1.5s infinite ease-in-out;
+            background-color: #ef4444;
+        }
+        
+        @keyframes pulse-border {
+            0% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0.7);
+            }
+            70% {
+                box-shadow: 0 0 0 10px rgba(239, 68, 68, 0);
+            }
+            100% {
+                box-shadow: 0 0 0 0 rgba(239, 68, 68, 0);
+            }
+        }
+
+        .send-button:active, .action-button:active {
+            transform: translateY(1px);
+        }
+
+        .send-button:disabled, .action-button:disabled {
+            background-color: #4b4b6c;
+            cursor: not-allowed;
+            box-shadow: none;
+        }
+        
+        .modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0, 0, 0, 0.7);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            z-index: 50;
+            transition: all 0.5s ease-in-out;
+        }
+        .modal.hidden {
+            opacity: 0;
+            pointer-events: none;
+        }
+
+        .modal-content {
+            background-color: #2a2a44;
+            padding: 2rem;
+            border-radius: 1rem;
+            width: 90%;
+            max-width: 600px;
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.3);
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            transform: scale(0.9);
+            animation: modalFadeIn 0.3s forwards;
+        }
+        @keyframes modalFadeIn {
+            to {
+                transform: scale(1);
+            }
+        }
+        
+        #welcome-animation {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-color: #1a1a2e;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            color: white;
+            font-size: 2rem;
+            font-weight: bold;
+            z-index: 60;
+            opacity: 1;
+            transition: opacity 1s ease-in-out;
+        }
+
+    </style>
+</head>
+<body>
+    <div id="welcome-animation">
+        <h1 class="text-4xl font-extrabold text-white">InternBot</h1>
+        <p class="text-xl text-gray-300 mt-2">Connecting to your future...</p>
+    </div>
+
+    <div id="welcome-modal" class="modal hidden">
+        <div class="modal-content text-center">
+            <h2 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 mb-2">Welcome to InternBot</h2>
+            <p class="text-lg text-gray-300 mb-6">Your ultimate career & life mentor.</p>
+            <input type="text" id="username-input" class="w-full px-4 py-3 rounded-xl border border-gray-600 bg-gray-800 text-white placeholder-gray-400 focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 transition" placeholder="Please enter your name">
+            <button id="start-chat-btn" class="w-full px-6 py-3 mt-4 rounded-xl font-semibold bg-indigo-600 text-white hover:bg-indigo-500 transition-colors shadow-lg">Start Mentoring</button>
+        </div>
+    </div>
+    
+    <div id="app-wrapper" class="app-container hidden">
+        <!-- Left Sidebar -->
+        <div class="sidebar">
+            <h1 class="text-3xl font-bold text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-pink-600 mb-4 text-center">InternBot</h1>
+            <div id="sidebar-buttons" class="flex flex-col gap-4">
+                <button id="new-chat-btn" class="sidebar-button active">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M12 4v16m8-8H4" />
+                    </svg>
+                    New Chat
+                </button>
+               <button id="resume-builder-btn" class="sidebar-button">
+                   <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                       <path stroke-linecap="round" stroke-linejoin="round" d="M4 6h16M4 10h16M4 14h10M4 18h6" />
+                    </svg>
+                    AI Resume Builder
+                </button>
+
+            </div>
+        </div>
+
+        <!-- Main Content Area -->
+        <div class="main-content">
+            <div id="chat-header" class="chat-header">
+                <h1 id="app-title" class="text-2xl font-bold">InternBot</h1>
+                <p id="app-tagline" class="text-sm font-semibold opacity-90 mt-1">Your ultimate career & life mentor!</p>
+            </div>
+
+            <div id="chat-messages" class="chat-messages">
+                <!-- Messages will be added here dynamically -->
+            </div>
+
+            <div id="main-input-area" class="input-area">
+                <label for="file-upload" class="action-button cursor-pointer">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-8l-4-4m0 0L8 8m4-4v12" />
+                    </svg>
+                </label>
+                <input type="file" id="file-upload" class="hidden">
+
+                <button id="voice-input-btn" class="action-button">
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-14 0v-2m7 14v-2m0 0a3 3 0 01-3-3V5a3 3 0 013-3 3 3 0 013 3v7a3 3 0 01-3 3z" />
+                    </svg>
+                </button>
+                
+                <input type="text" id="user-input" placeholder="Ask me anything...">
+                <div id="file-name-tag" class="file-name-tag">
+                    <span id="file-name-text"></span>
+                    <span id="remove-file-btn" class="remove-file-btn">&times;</span>
+                </div>
+                <button id="send-button" class="send-button">
+                    <svg id="send-icon" xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M5 10l7-7m0 0l7 7m-7-7v18" />
+                    </svg>
+                    <svg id="loading-spinner" class="animate-spin h-6 w-6 text-white hidden" xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                    </svg>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        // NOTE: The API_KEY is provided by the user in the initial prompt.
+        
+        const welcomeAnimation = document.getElementById('welcome-animation');
+        const welcomeModal = document.getElementById('welcome-modal');
+        const usernameInput = document.getElementById('username-input');
+        const startChatBtn = document.getElementById('start-chat-btn');
+        const appWrapper = document.getElementById('app-wrapper');
+        const newChatBtn = document.getElementById('new-chat-btn');
+        const chatMessages = document.getElementById('chat-messages');
+        const userInput = document.getElementById('user-input');
+        const sendButton = document.getElementById('send-button');
+        const sendIcon = document.getElementById('send-icon');
+        const loadingSpinner = document.getElementById('loading-spinner');
+        const fileUploadInput = document.getElementById('file-upload');
+        const fileNameTag = document.getElementById('file-name-tag');
+        const fileNameText = document.getElementById('file-name-text');
+        const removeFileBtn = document.getElementById('remove-file-btn');
+        const voiceInputBtn = document.getElementById('voice-input-btn');
+
+        let generalChatHistory = [];
+        let userName = '';
+        let uploadedFile = null;
+
+        // --- Core Functions ---
+
+        // Robust fetch with exponential backoff for API calls
+        const fetchWithExponentialBackoff = async (url, options, retries = 3, delay = 1000) => {
+            for (let i = 0; i < retries; i++) {
+                try {
+                    const response = await fetch(url, options);
+                    if (!response.ok) {
+                        const errorText = await response.text();
+                        throw new Error(`API Error ${response.status}: ${errorText}`);
+                    }
+                    return response;
+                } catch (error) {
+                    if (i === retries - 1) throw error;
+                    await new Promise(resolve => setTimeout(resolve, delay));
+                    delay *= 2;
+                }
+            }
+        };
+        
+        // Adds a message to the chat display
+        const addMessageToChat = (text, sender, messagesElement) => {
+            const messageDiv = document.createElement('div');
+            if (sender === 'user') {
+                messageDiv.classList.add('user-message');
+                messageDiv.innerHTML = `<p class="message-content">${text}</p>`;
+            } else {
+                messageDiv.classList.add('bot-message');
+                const messageContent = document.createElement('p');
+                messageContent.classList.add('message-content');
+                
+                // Format and display markdown
+                let formattedText = text;
+                formattedText = formattedText.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+                formattedText = formattedText.replace(/\*(.*?)\*/g, '<em>$1</em>');
+                formattedText = formattedText.replace(/###\s*(.*)/g, '<h3>$1</h3>');
+                formattedText = formattedText.replace(/##\s*(.*)/g, '<h3>$1</h3>');
+                
+                // Link formatting
+                formattedText = formattedText.replace(/\[([^\]]+)\]\(([^)]+)\)/g, (match, title, url) => {
+                    return `<a href="${url}" target="_blank" class="text-blue-200 hover:underline font-bold">${title}</a>`;
+                });
+
+                // Simple handling for newlines as paragraphs/breaks (relies on pre-wrap for list markers)
+                formattedText = formattedText.replace(/\n/g, '<br>');
+
+                messageContent.innerHTML = formattedText;
+                messageDiv.appendChild(messageContent);
+            }
+            messagesElement.appendChild(messageDiv);
+            messagesElement.scrollTop = messagesElement.scrollHeight;
+        };
+        
+        // Shows the "thinking" indicator
+        const showTypingIndicator = (messagesElement) => {
+            const typingIndicatorDiv = document.createElement('div');
+            typingIndicatorDiv.id = 'typing-indicator';
+            typingIndicatorDiv.classList.add('typing-indicator');
+            typingIndicatorDiv.textContent = 'InternBot is thinking...';
+            messagesElement.appendChild(typingIndicatorDiv);
+            messagesElement.scrollTop = messagesElement.scrollHeight;
+        };
+        
+        // Removes the "thinking" indicator
+        const removeTypingIndicator = () => {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        };
+
+        // Disables/enables input controls and shows loading state
+        const setControlsState = (disabled) => {
+            sendButton.disabled = disabled;
+            userInput.disabled = disabled;
+            fileUploadInput.disabled = disabled;
+            voiceInputBtn.disabled = disabled;
+            if (disabled) {
+                sendIcon.classList.add('hidden');
+                loadingSpinner.classList.remove('hidden');
+            } else {
+                sendIcon.classList.remove('hidden');
+                loadingSpinner.classList.add('hidden');
+            }
+        };
+
+        const handleSendMessage = async (inputElement, messagesElement) => {
+            const userText = inputElement.value.trim();
+            if (userText === '' && !uploadedFile) return;
+            
+            addMessageToChat(userText, 'user', messagesElement);
+            inputElement.value = '';
+            setControlsState(true);
+            showTypingIndicator(messagesElement);
+
+            let systemInstruction = {
+                parts: [{ text: `
+                    You are InternBot, a friendly, empathetic, and highly intelligent AI Career & Life Mentor. Your purpose is to provide direct, factual, and concise information in a warm, friendly tone. Use emojis to express emotions and make the conversation feel human.
+                    - For all job and internship queries, you must first use Google Search to find the most current and relevant listings to ensure the information is up-to-date.
+                    - Provide links ONLY from genuine, reputable sources. Examples of genuine sources include well-known job portals like LinkedIn, Indeed, and Internshala, as well as reputable company career pages, and government and educational portals like ISRO and AICTE.
+                    - Provide a single, clickable URL for the listing, using the format: [Job Title at Company Name](URL).
+                    - List a maximum of 3 essential, relevant skills for the role, using markdown bullet points. Make these skills compelling and specific.
+                    - If a file has been uploaded (it will be provided in the user's prompt as inline data), you should read and analyze its content to answer the user's questions based on the provided document.
+                    - Your text must be clear, concise, and helpful.
+                `}]
+            };
+            
+            let currentHistory = generalChatHistory;
+            const userParts = [{ text: userText }];
+            if (uploadedFile) {
+                userParts.push({ inlineData: uploadedFile });
+            }
+            currentHistory.push({ role: "user", parts: userParts });
+            
+            let payload = {
+                contents: currentHistory,
+                // Using Google Search grounding for up-to-date job and career info
+                tools: [{ "google_search": {} }], 
+                systemInstruction: systemInstruction,
+            };
+
+            // **CRITICAL UPDATE**: Using the latest, stable Gemini Flash model (09-2025 preview)
+          
+
+            try {
+                const response = await fetchWithExponentialBackoff("/api/chat", {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(payload)
+                });
+                
+                const result = await response.json();
+                const botResponseText = result.candidates?.[0]?.content?.parts?.[0]?.text;
+                let responseToDisplay;
+
+                if (botResponseText) {
+                    responseToDisplay = botResponseText.trim();
+                } else {
+                    responseToDisplay = "Hmm, I couldn't generate a clear response for that. Could you try rephrasing your question? 🤔";
+                }
+                addMessageToChat(responseToDisplay, 'bot', messagesElement);
+                currentHistory.push({ role: "model", parts: [{ text: responseToDisplay }] });
+
+            } catch (error) {
+                console.error("Error connecting to API:", error);
+                addMessageToChat(`An error occurred: ${error.message}. Please check your connection and try again.`, 'bot', messagesElement);
+                currentHistory.push({ role: "model", parts: [{ text: `An error occurred: ${error.message}. Please check your connection and try again.` }] });
+            } finally {
+                removeTypingIndicator();
+                setControlsState(false);
+                uploadedFile = null; // Reset uploaded file after sending
+                fileNameTag.style.display = 'none';
+                fileUploadInput.value = '';
+            }
+        };
+        
+        // --- Event Listeners ---
+        window.addEventListener('load', () => {
+            setTimeout(() => {
+                welcomeAnimation.style.opacity = '0';
+                setTimeout(() => {
+                    welcomeAnimation.style.display = 'none';
+                    welcomeModal.classList.remove('hidden');
+                }, 500);
+            }, 2000);
+        });
+
+        startChatBtn.addEventListener('click', () => {
+            userName = usernameInput.value.trim() || "Intern";
+            welcomeModal.classList.add('hidden');
+            appWrapper.classList.remove('hidden');
+            appWrapper.style.animation = 'fadeInScale 0.7s forwards';
+            
+            addMessageToChat(`Hello ${userName}! I'm InternBot, your personal career and life mentor. You can talk to me with your voice or upload a document for me to analyze. What would you like to know today? 🚀`, 'bot', chatMessages);
+        });
+
+        newChatBtn.addEventListener('click', () => {
+            generalChatHistory = [];
+            chatMessages.innerHTML = '';
+            addMessageToChat(`Hello ${userName}! I'm InternBot, your personal career and life mentor. You can talk to me with your voice or upload a document for me to analyze. What would you like to know today? 🚀`, 'bot', chatMessages);
+        });
+
+        sendButton.addEventListener('click', () => {
+            handleSendMessage(userInput, chatMessages);
+        });
+
+        userInput.addEventListener('keypress', (e) => {
+            if (e.key === 'Enter') {
+                handleSendMessage(userInput, chatMessages);
+            }
+        });
+        
+        // File Upload Handler
+        fileUploadInput.addEventListener('change', (event) => {
+            const file = event.target.files[0];
+            if (!file) return;
+
+            const reader = new FileReader();
+            reader.onload = (e) => {
+                // Ensure mimeType is correctly captured for the API
+                const mimeType = file.type;
+                const base64Data = e.target.result.split(',')[1];
+                
+                uploadedFile = {
+                    mimeType: mimeType,
+                    data: base64Data
+                };
+                
+                // Show a message to the user that the file is ready
+                fileNameText.textContent = file.name;
+                fileNameTag.style.display = 'flex';
+                addMessageToChat(`File selected: ${file.name}. You can now ask a question about its content.`, 'bot', chatMessages);
+            };
+            reader.readAsDataURL(file);
+        });
+        
+        removeFileBtn.addEventListener('click', () => {
+            uploadedFile = null;
+            fileNameTag.style.display = 'none';
+            fileUploadInput.value = ''; // Reset the input to allow selecting the same file again
+        });
+
+        // Voice-to-Text Handler
+        let isRecording = false;
+        const voiceRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+
+        voiceInputBtn.addEventListener('click', () => {
+            if (!voiceRecognition) {
+                addMessageToChat("Voice recognition is not supported in your browser. Please use a modern browser like Chrome.", 'bot', chatMessages);
+                return;
+            }
+            
+            const recognition = new voiceRecognition();
+            recognition.continuous = false;
+            recognition.interimResults = false;
+            recognition.lang = 'en-US';
+
+            if (!isRecording) {
+                isRecording = true;
+                voiceInputBtn.classList.add('recording');
+                voiceInputBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" viewBox="0 0 24 24" fill="currentColor">
+                        <path d="M12 2C6.48 2 2 6.48 2 12s4.48 10 10 10 10-4.48 10-10S17.52 2 12 2zm-2 14H8V8h2v8zm4 0h-2V8h2v8z"/>
+                    </svg>
+                `;
+                userInput.placeholder = "Listening...";
+                recognition.start();
+            } else {
+                isRecording = false;
+                voiceInputBtn.classList.remove('recording');
+                voiceInputBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-14 0v-2m7 14v-2m0 0a3 3 0 01-3-3V5a3 3 0 013-3 3 3 0 013 3v7a3 3 0 01-3 3z" />
+                    </svg>
+                `;
+                userInput.placeholder = "Ask me anything...";
+                recognition.stop();
+            }
+
+            recognition.onresult = (event) => {
+                const transcript = event.results[0][0].transcript;
+                userInput.value = transcript;
+                handleSendMessage(userInput, chatMessages);
+            };
+
+            recognition.onerror = (event) => {
+                console.error("Speech recognition error:", event.error);
+                addMessageToChat(`Voice recognition error: ${event.error}`, 'bot', chatMessages);
+                isRecording = false;
+                voiceInputBtn.classList.remove('recording');
+                voiceInputBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-14 0v-2m7 14v-2m0 0a3 3 0 01-3-3V5a3 3 0 013-3 3 3 0 013 3v7a3 3 0 01-3 3z" />
+                    </svg>
+                `;
+                userInput.placeholder = "Ask me anything...";
+            };
+
+                        recognition.onend = () => {
+                isRecording = false;
+                voiceInputBtn.classList.remove('recording');
+                voiceInputBtn.innerHTML = `
+                    <svg xmlns="http://www.w3.org/2000/svg" class="h-6 w-6" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2">
+                        <path stroke-linecap="round" stroke-linejoin="round" d="M19 11a7 7 0 01-14 0v-2m7 14v-2m0 0a3 3 0 01-3-3V5a3 3 0 013-3 3 3 0 013 3v7a3 3 0 01-3 3z" />
+                    </svg>
+                `;
+                userInput.placeholder = "Ask me anything...";
+            };
+        });
+
+        // ✅ AI Resume Builder Button (correct placement)
+        document.getElementById('resume-builder-btn').addEventListener('click', () => {
+            window.open('ResumeBuilder.html', '_blank'); // Opens in a new tab
+        });
+
+    </script>
+</body>
+</html>

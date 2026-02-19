@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+    <title>AI Resume Builder — Final</title>
+
+    <!-- Tailwind -->
+    <script src="https://cdn.tailwindcss.com"></script>
+
+    <!-- React + Babel -->
+    <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+
+    <!-- PDF libs -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js"></script>
+    <script src="https://unpkg.com/html2canvas@1.4.1/dist/html2canvas.min.js"></script>
+
+    <style>
+      /* ensure crisp print colors */
+      @media print {
+        body { -webkit-print-color-adjust: exact; }
+      }
+    </style>
+  </head>
+
+  <body class="bg-gray-50">
+    <div id="root" class="min-h-screen"></div>
+
+    <script type="text/babel">
+      const { useState, useRef } = React;
+
+      /* Chip input for skills */
+      function ChipInput({ label, items = [], onChange }) {
+        const [input, setInput] = useState("");
+        const addChip = () => {
+          const v = input.trim();
+          if (!v) return setInput("");
+          if (!items.includes(v)) onChange([...items, v]);
+          setInput("");
+        };
+        const onKey = (e) => {
+          if (e.key === "Enter" || e.key === ",") {
+            e.preventDefault();
+            addChip();
+          }
+        };
+        return (
+          <div className="mb-3">
+            <label className="text-xs text-gray-600">{label}</label>
+            <div className="flex flex-wrap gap-2 mt-1 border rounded p-2 bg-gray-50">
+              {items.map((c, i) => (
+                <span key={i} className="flex items-center gap-1 bg-indigo-100 text-indigo-700 px-2 py-1 rounded-full text-xs">
+                  {c}
+                  <button onClick={() => onChange(items.filter(x => x !== c))} className="text-[10px] text-red-500 font-bold">✕</button>
+                </span>
+              ))}
+              <input
+                placeholder="Type and press Enter..."
+                value={input}
+                onChange={(e) => setInput(e.target.value)}
+                onKeyDown={onKey}
+                onBlur={addChip}
+                className="flex-1 bg-transparent text-xs p-1 outline-none"
+              />
+            </div>
+          </div>
+        );
+      }
+
+      /* Editable list for additional fields */
+      function EditableList({ title, items = [], onChange, placeholder }) {
+        const add = () => onChange([...(items || []), ""]);
+        const update = (idx, val) => {
+          const copy = [...items];
+          copy[idx] = val;
+          onChange(copy);
+        };
+        const remove = (idx) => {
+          const copy = [...items];
+          copy.splice(idx, 1);
+          onChange(copy.length ? copy : undefined); // remove section if empty
+        };
+        return (
+          <div className="mb-3 border p-2 rounded">
+            <div className="flex justify-between items-center mb-2">
+              <h4 className="text-sm font-semibold text-indigo-500">{title}</h4>
+            </div>
+            {(items || []).map((it, i) => (
+              <div key={i} className="flex gap-2 mb-2">
+                <input
+                  className="flex-1 border rounded p-1 text-sm"
+                  value={it}
+                  placeholder={placeholder || title}
+                  onChange={(e) => update(i, e.target.value)}
+                />
+                <button onClick={() => remove(i)} className="text-red-500 text-sm">✕</button>
+              </div>
+            ))}
+            <button onClick={add} className="text-xs text-indigo-600">+ Add</button>
+          </div>
+        );
+      }
+
+      function App() {
+        const previewRef = useRef(null);
+        const [template, setTemplate] = useState("modern");
+        const [resume, setResume] = useState(DEFAULT_RESUME);
+        const templates = {
+          modern: "bg-white text-gray-900",
+          elegant: "bg-gray-50 text-gray-800 font-serif",
+          creative: "bg-gradient-to-br from-yellow-50 via-pink-50 to-purple-100 text-gray-900"
+        };
+
+        /* generic nested update */
+        const updateField = (path, value) => {
+          const parts = path.split(".");
+          const copy = JSON.parse(JSON.stringify(resume));
+          let cur = copy;
+          for (let i = 0; i < parts.length - 1; i++) {
+            if (!cur[parts[i]]) cur[parts[i]] = {};
+            cur = cur[parts[i]];
+          }
+          cur[parts[parts.length - 1]] = value;
+          setResume(copy);
+        };
+
+        const addItem = (section, item) => {
+          const copy = JSON.parse(JSON.stringify(resume));
+          copy[section] = [...(copy[section] || []), item];
+          setResume(copy);
+        };
+
+        const addExtraField = (field) => {
+          const copy = JSON.parse(JSON.stringify(resume));
+          if (!copy[field]) copy[field] = [""];
+          setResume(copy);
+        };
+
+        const updateExtra = (field, arr) => {
+          const copy = JSON.parse(JSON.stringify(resume));
+          if (arr === undefined) delete copy[field];
+          else copy[field] = arr;
+          setResume(copy);
+        };
+
+        /* simple local AI stub producing a professional summary */
+        const generateProfessionalSummary = () => {
+          const name = resume.personal.name || "";
+          const title = resume.personal.title || "";
+          const skills = [...(resume.skills.technical || []), ...(resume.skills.frameworks || []), ...(resume.skills.soft || [])].slice(0,6).join(", ");
+          const projects = (resume.projects || []).map(p => p.title).slice(0,3).join(", ");
+          const education = (resume.education && resume.education[0] && resume.education[0].degree) ? resume.education[0].degree : "";
+          const summary = `${title} with experience in ${skills}${projects ? " — notable projects: " + projects : ""}. Strong academic background in ${education}. Ready to contribute to impactful projects and teams.`;
+          updateField("summary", summary);
+        };
+
+        /* PDF export */
+        const exportPDF = async () => {
+          const el = previewRef.current;
+          if (!el) return alert("Preview area not ready");
+          try {
+            const canvas = await html2canvas(el, { scale: 3, useCORS: true, backgroundColor: "#ffffff", scrollY: -window.scrollY });
+            const imgData = canvas.toDataURL("image/png");
+            const pdf = new jspdf.jsPDF("p", "mm", "a4");
+            const pageWidth = pdf.internal.pageSize.getWidth();
+            const imgHeight = (canvas.height * pageWidth) / canvas.width;
+            let position = 0;
+            if (imgHeight <= pdf.internal.pageSize.getHeight()) {
+              pdf.addImage(imgData, "PNG", 0, 0, pageWidth, imgHeight);
+            } else {
+              // multi-page
+              let heightLeft = imgHeight;
+              let y = 0;
+              while (heightLeft > 0) {
+                pdf.addImage(imgData, "PNG", 0, y, pageWidth, imgHeight);
+                heightLeft -= pdf.internal.pageSize.getHeight();
+                if (heightLeft > 0) pdf.addPage();
+                y -= pdf.internal.pageSize.getHeight();
+              }
+            }
+            pdf.save(`${resume.personal.name || "resume"}.pdf`);
+          } catch (err) {
+            console.error(err);
+            alert("PDF export failed — see console for details.");
+          }
+        };
+
+        return (
+          <div className="min-h-screen bg-slate-50 text-slate-900 p-6">
+            <div className="max-w-7xl mx-auto grid md:grid-cols-2 gap-6">
+              {/* Editor */}
+              <div className="bg-white p-4 rounded shadow space-y-4 overflow-auto">
+                <h1 className="text-xl font-bold text-indigo-500">AI Resume Builder</h1>
+
+                {/* Templates */}
+                <div className="flex items-center gap-3">
+                  <span className="text-sm font-semibold">Template:</span>
+                  <select value={template} onChange={e => setTemplate(e.target.value)} className="border p-1 rounded">
+                    {Object.keys(templates).map(t => <option key={t} value={t}>{t[0].toUpperCase() + t.slice(1)}</option>)}
+                  </select>
+                </div>
+
+                {/* Contact */}
+                <div>
+                  <label className="block text-xs text-gray-500">Phone</label>
+                  <input value={resume.personal.phone || ""} onChange={e => updateField("personal.phone", e.target.value)} className="w-full border rounded p-2 mb-2" />
+                  <label className="block text-xs text-gray-500">Email</label>
+                  <input value={resume.personal.email || ""} onChange={e => updateField("personal.email", e.target.value)} className="w-full border rounded p-2 mb-2" />
+                  <label className="block text-xs text-gray-500">LinkedIn</label>
+                  <input value={resume.personal.linkedin || ""} onChange={e => updateField("personal.linkedin", e.target.value)} className="w-full border rounded p-2" />
+                </div>
+
+                {/* Name & Title */}
+                <label className="block">
+                  <span className="text-xs text-gray-500">Name</span>
+                  <input value={resume.personal.name} onChange={e => updateField("personal.name", e.target.value)} className="w-full border rounded p-2" />
+                </label>
+                <label className="block">
+                  <span className="text-xs text-gray-500">Title</span>
+                  <input value={resume.personal.title} onChange={e => updateField("personal.title", e.target.value)} className="w-full border rounded p-2" />
+                </label>
+
+                {/* Summary + AI button */}
+                <div className="relative">
+                  <label className="block text-xs text-gray-500">Professional Summary</label>
+                  <textarea value={resume.summary} onChange={e => updateField("summary", e.target.value)} rows={3} className="w-full border rounded p-2" />
+                  <button onClick={generateProfessionalSummary} className="absolute right-2 bottom-2 bg-indigo-600 text-white text-xs px-2 py-1 rounded">Generate with AI</button>
+                </div>
+
+                {/* Education */}
+                <h3 className="font-semibold text-indigo-400 mt-4">Education</h3>
+                {resume.education.map((ed, idx) => (
+                  <div key={idx} className="border p-2 mb-2 rounded">
+                    <input value={ed.school} placeholder="School / College" className="w-full border rounded p-1 mb-1" onChange={e => { const c = [...resume.education]; c[idx].school = e.target.value; setResume({...resume, education: c}); }} />
+                    <input value={ed.degree} placeholder="Degree / Course" className="w-full border rounded p-1 mb-1" onChange={e => { const c = [...resume.education]; c[idx].degree = e.target.value; setResume({...resume, education: c}); }} />
+                    <div className="flex gap-2">
+                      <input value={ed.from} placeholder="From" className="w-24 border rounded p-1" onChange={e => { const c = [...resume.education]; c[idx].from = e.target.value; setResume({...resume, education: c}); }} />
+                      <input value={ed.to} placeholder="To" className="w-24 border rounded p-1" onChange={e => { const c = [...resume.education]; c[idx].to = e.target.value; setResume({...resume, education: c}); }} />
+                    </div>
+                  </div>
+                ))}
+                <button onClick={() => addItem("education", {school:"",degree:"",from:"",to:""})} className="text-xs text-indigo-600">+ Add Education</button>
+
+                {/* Skills */}
+                <h3 className="font-semibold text-indigo-400 mt-4">Skills</h3>
+                <ChipInput label="Technical Skills" items={resume.skills.technical} onChange={arr => updateField("skills.technical", arr)} />
+                <ChipInput label="Frameworks / Tools" items={resume.skills.frameworks} onChange={arr => updateField("skills.frameworks", arr)} />
+                <ChipInput label="Soft Skills" items={resume.skills.soft} onChange={arr => updateField("skills.soft", arr)} />
+
+                {/* Projects */}
+                <h3 className="font-semibold text-indigo-400 mt-4">Projects</h3>
+                {resume.projects.map((p, idx) => (
+                  <div key={idx} className="border p-2 mb-2 rounded">
+                    <input value={p.title} placeholder="Project Title" className="w-full border rounded p-1 mb-1" onChange={e => { const c = [...resume.projects]; c[idx].title = e.target.value; setResume({...resume, projects: c}); }} />
+                    <textarea value={p.description} placeholder="Short description" rows={2} className="w-full border rounded p-1 mb-1" onChange={e => { const c = [...resume.projects]; c[idx].description = e.target.value; setResume({...resume, projects: c}); }} />
+                    <input value={Array.isArray(p.tools) ? p.tools.join(", ") : p.tools} placeholder="Tools (comma separated)" className="w-full border rounded p-1 mb-1" onChange={e => { const c = [...resume.projects]; c[idx].tools = e.target.value; setResume({...resume, projects: c}); }} />
+                    <div className="flex gap-2">
+                      <input value={p.from} placeholder="From" className="w-24 border rounded p-1" onChange={e => { const c = [...resume.projects]; c[idx].from = e.target.value; setResume({...resume, projects: c}); }} />
+                      <input value={p.to} placeholder="To" className="w-24 border rounded p-1" onChange={e => { const c = [...resume.projects]; c[idx].to = e.target.value; setResume({...resume, projects: c}); }} />
+                    </div>
+                  </div>
+                ))}
+                <button onClick={() => addItem("projects", {title:"", description:"", tools:"", from:"", to:""})} className="text-xs text-indigo-600">+ Add Project</button>
+
+                {/* Certifications */}
+                <h3 className="font-semibold text-indigo-400 mt-4">Certifications</h3>
+                {resume.certifications.map((c, idx) => (
+                  <div key={idx} className="border p-2 mb-2 rounded">
+                    <input value={c.title} placeholder="Certification Title" className="w-full border rounded p-1 mb-1" onChange={e => { const cs = [...resume.certifications]; cs[idx].title = e.target.value; setResume({...resume, certifications: cs}); }} />
+                    <input value={c.org} placeholder="Issued By" className="w-full border rounded p-1" onChange={e => { const cs = [...resume.certifications]; cs[idx].org = e.target.value; setResume({...resume, certifications: cs}); }} />
+                  </div>
+                ))}
+                <button onClick={() => addItem("certifications", {title:"", org:""})} className="text-xs text-indigo-600">+ Add Certification</button>
+
+                {/* Add Extra Fields (creates editable input boxes) */}
+                <h3 className="font-semibold text-indigo-400 mt-4">Add Extra Fields</h3>
+                <div className="flex flex-wrap gap-2 text-xs mb-3">
+                  {["languages","achievements","hobbies","references"].map(f => (
+                    <button key={f} onClick={() => addExtraField(f)} className="border px-2 py-1 rounded hover:bg-indigo-100">+ {f.charAt(0).toUpperCase() + f.slice(1)}</button>
+                  ))}
+                </div>
+
+                {/* Render editable extra fields (exactly like other input groups) */}
+                {resume.languages && <EditableList title="Languages" items={resume.languages} onChange={arr => updateExtra("languages", arr)} placeholder="e.g. English" />}
+                {resume.achievements && <EditableList title="Achievements" items={resume.achievements} onChange={arr => updateExtra("achievements", arr)} placeholder="e.g. Won Hackathon 2024" />}
+                {resume.hobbies && <EditableList title="Hobbies" items={resume.hobbies} onChange={arr => updateExtra("hobbies", arr)} placeholder="e.g. Photography" />}
+
+                {/* References: structured name + contact */}
+                {resume.references && (
+                  <div className="mb-3 border p-2 rounded">
+                    <h4 className="text-sm font-semibold text-indigo-500">References</h4>
+                    {resume.references.map((r, i) => (
+                      <div key={i} className="mb-2 border rounded p-2">
+                        <div className="flex gap-2 mb-2">
+                          <input value={r.name} placeholder="Name" className="flex-1 border rounded p-1" onChange={e => { const copy = [...resume.references]; copy[i].name = e.target.value; setResume({...resume, references: copy}); }} />
+                          <input value={r.contact} placeholder="Contact" className="w-48 border rounded p-1" onChange={e => { const copy = [...resume.references]; copy[i].contact = e.target.value; setResume({...resume, references: copy}); }} />
+                        </div>
+                        <div className="flex justify-end">
+                          <button onClick={() => { const copy = [...resume.references]; copy.splice(i,1); setResume({...resume, references: copy.length ? copy : undefined}); }} className="text-xs text-red-500">Delete</button>
+                        </div>
+                      </div>
+                    ))}
+                    <button onClick={() => addItem("references", {name:"", contact:""})} className="text-xs text-indigo-600">+ Add Reference</button>
+                  </div>
+                )}
+
+                <div className="mt-4 flex gap-2">
+                  <button onClick={exportPDF} className="bg-green-600 hover:bg-green-700 text-white px-4 py-2 rounded">Download PDF</button>
+                  <button onClick={() => { navigator.clipboard.writeText(JSON.stringify(resume)); alert("Resume JSON copied to clipboard"); }} className="px-3 py-2 border rounded text-sm">Copy JSON</button>
+                </div>
+              </div>
+
+              {/* Preview */}
+              <div ref={previewRef} className={`p-6 rounded shadow transition-all duration-500 ${templates[template]}`} style={{ minHeight: "842px", width: "210mm" }}>
+                <h1 className="text-3xl font-bold text-indigo-800">{resume.personal.name}</h1>
+                <p className="text-lg mb-1">{resume.personal.title}</p>
+                <p className="text-sm mb-3 text-gray-600">{resume.personal.phone} | {resume.personal.email} | {resume.personal.linkedin}</p>
+
+                <p className="text-sm mb-4">{resume.summary}</p>
+
+                <h2 className="font-semibold border-b border-gray-300 mb-1">Education</h2>
+                {resume.education.map((ed, i) => <p key={i} className="text-sm">{ed.degree}, {ed.school} ({ed.from}-{ed.to})</p>)}
+
+                <h2 className="font-semibold border-b border-gray-300 mt-2 mb-1">Skills</h2>
+                <p className="text-sm"><strong>Technical:</strong> {resume.skills.technical.join(", ")}</p>
+                <p className="text-sm"><strong>Frameworks/Tools:</strong> {resume.skills.frameworks.join(", ")}</p>
+                <p className="text-sm"><strong>Soft Skills:</strong> {resume.skills.soft.join(", ")}</p>
+
+                <h2 className="font-semibold border-b border-gray-300 mt-2 mb-1">Projects</h2>
+                {resume.projects.map((p, i) => (
+                  <p key={i} className="text-sm mb-1">
+                    <strong>{p.title}</strong> — {p.description} {p.from || p.to ? `(${p.from || ""}-${p.to || ""})` : ""} <span className="text-xs text-gray-600">• Tools: {Array.isArray(p.tools) ? p.tools.join(", ") : p.tools}</span>
+                  </p>
+                ))}
+
+                <h2 className="font-semibold border-b border-gray-300 mt-2 mb-1">Certifications</h2>
+                {resume.certifications.map((c, i) => <p key={i} className="text-sm">{c.title} — {c.org}</p>)}
+
+                {resume.achievements && resume.achievements.length > 0 && (
+                  <>
+                    <h2 className="font-semibold border-b border-gray-300 mt-2 mb-1">Achievements</h2>
+                    <ul className="list-disc ml-5 text-sm">{resume.achievements.map((a, i) => <li key={i}>{a}</li>)}</ul>
+                  </>
+                )}
+
+                {resume.languages && resume.languages.length > 0 && (
+                  <>
+                    <h2 className="font-semibold border-b border-gray-300 mt-2 mb-1">Languages</h2>
+                    <p className="text-sm">{resume.languages.join(", ")}</p>
+                  </>
+                )}
+
+                {resume.hobbies && resume.hobbies.length > 0 && (
+                  <>
+                    <h2 className="font-semibold border-b border-gray-300 mt-2 mb-1">Hobbies</h2>
+                    <p className="text-sm">{resume.hobbies.join(", ")}</p>
+                  </>
+                )}
+
+                {resume.references && resume.references.length > 0 && (
+                  <>
+                    <h2 className="font-semibold border-b border-gray-300 mt-2 mb-1">References</h2>
+                    {resume.references.map((r, i) => <p key={i} className="text-sm">{r.name} — {r.contact}</p>)}
+                  </>
+                )}
+              </div>
+            </div>
+          </div>
+        );
+      }
+
+      /* Default resume data */
+      const DEFAULT_RESUME = {
+        personal: {
+          name: "Sujal J",
+          title: "B.E. CSE (AI-ML) Student",
+          phone: "9876543210",
+          email: "sujal@example.com",
+          linkedin: "linkedin.com/in/sujal"
+        },
+        summary: "Passionate AI/ML student experienced in building real-world projects.",
+        education: [{ school: "ATME College of Engineering", degree: "B.E - CSE (AI-ML)", from: "2022", to: "2026" }],
+        skills: { technical: ["Python", "TensorFlow"], frameworks: ["React", "Next.js", "Firebase"], soft: ["Leadership", "Teamwork"] },
+        projects: [{ title: "EduBot", description: "AI chatbot for VTU students", tools: ["Python", "LangChain"], from: "2023", to: "2024" }],
+        certifications: [{ title: "Building LLMs", org: "Google AI" }]
+      };
+
+      const root = ReactDOM.createRoot(document.getElementById("root"));
+      root.render(<App />);
+    </script>
+  </body>
+</html>
